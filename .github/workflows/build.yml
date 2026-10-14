@@ -1,0 +1,67 @@
+name: Build AntiPhish APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            git zip unzip openjdk-17-jdk autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev cmake \
+            libffi-dev libssl-dev build-essential ccache
+
+      - name: Cache buildozer global directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-global-
+
+      - name: Cache buildozer project directory
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-
+
+      - name: Install buildozer
+        run: |
+          pip install --upgrade pip
+          pip install "buildozer==1.5.0" "cython==0.29.36" "setuptools<80"
+
+      - name: Patch p4a Python version to 3.12.10
+        run: |
+          P4A=~/.buildozer/android/platform/python-for-android
+          if [ -d "$P4A" ]; then
+            cd $P4A/pythonforandroid/recipes
+            sed -i "s/version = '3.14.2'/version = '3.12.10'/" python3/__init__.py || true
+            sed -i 's/version = "3.14.2"/version = "3.12.10"/' hostpython3/__init__.py || true
+          fi
+
+      - name: Build with buildozer
+        run: buildozer -v android debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: antiphish-apk
+          path: bin/*.apk
+          retention-days: 30
