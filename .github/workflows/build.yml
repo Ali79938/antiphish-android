@@ -36,63 +36,55 @@ jobs:
           BK=$HOME/.buildozer/android/platform/android-sdk
           rm -rf $BK
           mkdir -p $BK
-
           cp -a $ANDROID_HOME/cmdline-tools $BK/ 2>/dev/null || true
           cp -a $ANDROID_HOME/build-tools $BK/ 2>/dev/null || true
           cp -a $ANDROID_HOME/platform-tools $BK/ 2>/dev/null || true
           cp -a $ANDROID_HOME/platforms $BK/ 2>/dev/null || true
           cp -a $ANDROID_HOME/licenses $BK/ 2>/dev/null || true
-
           SDKMAN=$(find $BK/cmdline-tools -name sdkmanager -type f | head -1)
           mkdir -p $BK/tools/bin
           if [ -n "$SDKMAN" ]; then
             ln -sf $SDKMAN $BK/tools/bin/sdkmanager
           fi
+          echo "sdkmanager: $SDKMAN"
+          $BK/tools/bin/sdkmanager --version || true
 
-          AIDL=$(find $BK/build-tools -name aidl -type f | head -1)
-          echo "Found sdkmanager at: $SDKMAN"
-          echo "Found aidl at: $AIDL"
-
-          ls -la $BK/tools/bin/
-          $BK/tools/bin/sdkmanager --version || echo "sdkmanager failed"
+      - name: FORCE clean any cached p4a
+        run: |
+          rm -rf $HOME/.buildozer/android/platform/python-for-android
+          rm -rf .buildozer
+          rm -rf $HOME/.buildozer/android/platform/build-arm64-v8a
 
       - name: Pre-clone and patch p4a
         run: |
           mkdir -p $HOME/.buildozer/android/platform
           cd $HOME/.buildozer/android/platform
-
-          # Clone p4a
-          if [ ! -d python-for-android ]; then
-            git clone --depth 1 -b master https://github.com/kivy/python-for-android.git
-          fi
-
+          git clone --depth 1 -b master https://github.com/kivy/python-for-android.git
           cd python-for-android
 
-          # Patch kivy recipe: keep version but mark as recipe-only
           KIVY_RECIPE=pythonforandroid/recipes/kivy/__init__.py
-          if [ -f "$KIVY_RECIPE" ]; then
-            sed -i "s/version = '2.3.1'/version = None/" $KIVY_RECIPE || true
-            sed -i 's/version = "2.3.1"/version = None/' $KIVY_RECIPE || true
-            # Store the real version separately for the recipe itself
-            grep -q "_kivy_real_version" $KIVY_RECIPE || echo "_kivy_real_version = '2.3.1'" >> $KIVY_RECIPE
-          fi
+          sed -i "s/^    version = '2.3.1'/    version = None/" $KIVY_RECIPE || true
+          sed -i 's/^    version = "2.3.1"/    version = None/' $KIVY_RECIPE || true
 
-          # Patch pythonpackage.py to skip recipes during pip resolution
           PKG=pythonforandroid/pythonpackage.py
-          if [ -f "$PKG" ]; then
-            python3 -c "
-          import re
-          src = open('$PKG').read()
-          # In get_dep_names, skip anything that is a recipe name
-          src = src.replace('def get_dep_names(arch, exclude=None):',
-                            'def get_dep_names(arch, exclude=None):\n    return []')
-          open('$PKG', 'w').write(src)
-          print('patched pythonpackage.get_dep_names')
-          " || true
-          fi
+          python3 -c "
+import re
+path = '$PKG'
+src = open(path).read()
+src = re.sub(r'def get_dep_names\(arch, exclude=None\):.*?(?=\ndef |\Z)',
+             'def get_dep_names(arch, exclude=None):\n    return []\n\n',
+             src, count=1, flags=re.S)
+open(path, 'w').write(src)
+print('patched pythonpackage.get_dep_names')
+"
 
-          echo "=== kivy recipe version ==="
-          grep -n "version" pythonforandroid/recipes/kivy/__init__.py | head -5
+          find . -name "*.pyc" -delete
+          find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+          echo "=== kivy recipe ==="
+          grep -n "version" pythonforandroid/recipes/kivy/__init__.py | head -3
+          echo "=== pythonpackage ==="
+          grep -A 2 "def get_dep_names" pythonforandroid/pythonpackage.py | head -3
 
       - name: Build with buildozer
         run: buildozer -v android debug
