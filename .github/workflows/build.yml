@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Set up Python 3.12
@@ -31,60 +31,64 @@ jobs:
           pip install --upgrade pip
           pip install "buildozer==1.5.0" "cython==0.29.36" "setuptools<80"
 
-      - name: Prepare buildozer SDK with tools/bin/sdkmanager shim
+      - name: Set up Android SDK from runner
         run: |
           BK=$HOME/.buildozer/android/platform/android-sdk
           rm -rf $BK
           mkdir -p $BK
-          cp -a $ANDROID_HOME/cmdline-tools $BK/ 2>/dev/null || true
-          cp -a $ANDROID_HOME/build-tools $BK/ 2>/dev/null || true
-          cp -a $ANDROID_HOME/platform-tools $BK/ 2>/dev/null || true
-          cp -a $ANDROID_HOME/platforms $BK/ 2>/dev/null || true
-          cp -a $ANDROID_HOME/licenses $BK/ 2>/dev/null || true
+          cp -a $ANDROID_HOME/cmdline-tools $BK/
+          cp -a $ANDROID_HOME/build-tools $BK/
+          cp -a $ANDROID_HOME/platform-tools $BK/
+          cp -a $ANDROID_HOME/platforms $BK/
+          cp -a $ANDROID_HOME/licenses $BK/
           SDKMAN=$(find $BK/cmdline-tools -name sdkmanager -type f | head -1)
           mkdir -p $BK/tools/bin
-          if [ -n "$SDKMAN" ]; then
-            ln -sf $SDKMAN $BK/tools/bin/sdkmanager
-          fi
+          ln -sf $SDKMAN $BK/tools/bin/sdkmanager
           echo "sdkmanager: $SDKMAN"
-          $BK/tools/bin/sdkmanager --version || true
+          echo "aidl: $(find $BK/build-tools -name aidl -type f | head -1)"
 
-      - name: FORCE clean any cached p4a
+      - name: Clear any cached p4a and build trees
         run: |
           rm -rf $HOME/.buildozer/android/platform/python-for-android
           rm -rf .buildozer
           rm -rf $HOME/.buildozer/android/platform/build-arm64-v8a
 
-      - name: Pre-clone and patch p4a
+      - name: Clone p4a and apply patches
         run: |
           mkdir -p $HOME/.buildozer/android/platform
           cd $HOME/.buildozer/android/platform
           git clone --depth 1 -b master https://github.com/kivy/python-for-android.git
           cd python-for-android
 
-          KIVY_RECIPE=pythonforandroid/recipes/kivy/__init__.py
-          sed -i "s/^    version = '2.3.1'/    version = None/" $KIVY_RECIPE || true
-          sed -i 's/^    version = "2.3.1"/    version = None/' $KIVY_RECIPE || true
+          # Patch kivy recipe version to None
+          KIVY=pythonforandroid/recipes/kivy/__init__.py
+          sed -i "s/^    version = '2.3.1'/    version = None/" $KIVY || true
+          sed -i 's/^    version = "2.3.1"/    version = None/' $KIVY || true
 
-          PKG=pythonforandroid/pythonpackage.py
-          python3 -c "
-import re
-path = '$PKG'
-src = open(path).read()
-src = re.sub(r'def get_dep_names\(arch, exclude=None\):.*?(?=\ndef |\Z)',
-             'def get_dep_names(arch, exclude=None):\n    return []\n\n',
-             src, count=1, flags=re.S)
-open(path, 'w').write(src)
-print('patched pythonpackage.get_dep_names')
-"
+          # Stub out pythonpackage.py completely
+          cat > pythonforandroid/pythonpackage.py << 'PYEOF'
+          """Stubbed - p4a no longer resolves any pip packages.
+          All packages are provided by recipes.
+          """
 
-          find . -name "*.pyc" -delete
+          def get_dep_names(arch, exclude=None):
+              return []
+
+          def get_python_dep_names(arch):
+              return []
+
+          def get_recipe_dep_names(arch):
+              return []
+          PYEOF
+
+          # Wipe pyc caches
+          find . -name "*.pyc" -delete 2>/dev/null || true
           find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
           echo "=== kivy recipe ==="
           grep -n "version" pythonforandroid/recipes/kivy/__init__.py | head -3
           echo "=== pythonpackage ==="
-          grep -A 2 "def get_dep_names" pythonforandroid/pythonpackage.py | head -3
+          head -5 pythonforandroid/pythonpackage.py
 
       - name: Build with buildozer
         run: buildozer -v android debug
