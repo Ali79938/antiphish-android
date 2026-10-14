@@ -26,25 +26,37 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev cmake \
             libffi-dev libssl-dev build-essential ccache
 
-      - name: Accept Android SDK licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
       - name: Install buildozer
         run: |
           pip install --upgrade pip
           pip install "buildozer==1.5.0" "cython==0.29.36" "setuptools<80"
 
-      - name: Tell buildozer to use GitHub's pre-installed SDK
+      - name: Prime buildozer Android SDK with licenses accepted
         run: |
-          echo "ANDROIDSDK=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROIDNDK=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-          echo "ANDROIDAPI=33" >> $GITHUB_ENV
-          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
-          echo "=== SDK check ==="
-          ls -la $ANDROID_HOME/ | head
-          ls -la $ANDROID_HOME/build-tools/ | head
-          which aidl || ls $ANDROID_HOME/build-tools/*/aidl
+          # Create buildozer's expected SDK directory
+          BK_SDK=$HOME/.buildozer/android/platform/android-sdk
+          mkdir -p $BK_SDK
+          
+          # Copy GitHub's pre-installed command-line tools and build-tools
+          cp -r $ANDROID_HOME/cmdline-tools $BK_SDK/ 2>/dev/null || true
+          cp -r $ANDROID_HOME/build-tools $BK_SDK/ 2>/dev/null || true
+          cp -r $ANDROID_HOME/platform-tools $BK_SDK/ 2>/dev/null || true
+          cp -r $ANDROID_HOME/platforms $BK_SDK/ 2>/dev/null || true
+          cp -r $ANDROID_HOME/licenses $BK_SDK/ 2>/dev/null || true
+          
+          # Ensure tools/bin/sdkmanager exists (buildozer 1.5.0 expects this path)
+          mkdir -p $BK_SDK/tools/bin
+          cp $BK_SDK/cmdline-tools/latest/bin/* $BK_SDK/tools/bin/ 2>/dev/null || true
+          
+          # Print what we have
+          echo "=== buildozer SDK contents ==="
+          ls -la $BK_SDK/
+          echo "=== build-tools versions ==="
+          ls -la $BK_SDK/build-tools/ || echo "no build-tools"
+          echo "=== aidl locations ==="
+          find $BK_SDK -name aidl -type f 2>/dev/null || echo "no aidl found"
+          echo "=== licenses ==="
+          ls -la $BK_SDK/licenses/ || echo "no licenses"
 
       - name: Build with buildozer
         run: buildozer -v android debug
