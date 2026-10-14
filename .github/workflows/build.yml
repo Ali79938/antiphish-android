@@ -26,53 +26,25 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev cmake \
             libffi-dev libssl-dev build-essential ccache
 
-      - name: Cache buildozer global directory
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-global-
-
-      - name: Cache buildozer project directory
-        uses: actions/cache@v4
-        with:
-          path: .buildozer
-          key: buildozer-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-
+      - name: Accept Android SDK licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Install buildozer
         run: |
           pip install --upgrade pip
           pip install "buildozer==1.5.0" "cython==0.29.36" "setuptools<80"
 
-      - name: Pre-download and set up Android SDK with licenses accepted
+      - name: Tell buildozer to use GitHub's pre-installed SDK
         run: |
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk
-          cd $HOME/.buildozer/android/platform/android-sdk
-          mkdir -p cmdline-tools
-          cd cmdline-tools
-          curl -sL -o cmdline-tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-          unzip -q cmdline-tools.zip
-          mv cmdline-tools latest
-          mkdir -p $HOME/.buildozer/android/platform/android-sdk/tools/bin
-          cp latest/bin/* $HOME/.buildozer/android/platform/android-sdk/tools/bin/ 2>/dev/null || true
-          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/.buildozer/android/platform/android-sdk --licenses || true
-          $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/.buildozer/android/platform/android-sdk "build-tools;34.0.0" "platform-tools" "platforms;android-33" || true
-          echo "=== aidl check ==="
-          find $HOME/.buildozer/android/platform/android-sdk -name aidl -type f 2>/dev/null || echo "aidl not found in sdk"
-          ls -la $HOME/.buildozer/android/platform/android-sdk/build-tools/34.0.0/aidl || true
-
-      - name: Patch p4a Python version to 3.12.10
-        run: |
-          P4A=$HOME/.buildozer/android/platform/python-for-android
-          if [ -d "$P4A" ]; then
-            cd $P4A/pythonforandroid/recipes
-            sed -i "s/version = '3.14.2'/version = '3.12.10'/" python3/__init__.py || true
-            sed -i 's/version = "3.14.2"/version = "3.12.10"/' hostpython3/__init__.py || true
-          fi
+          echo "ANDROIDSDK=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROIDNDK=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          echo "ANDROIDAPI=33" >> $GITHUB_ENV
+          echo "ANDROIDMINAPI=24" >> $GITHUB_ENV
+          echo "=== SDK check ==="
+          ls -la $ANDROID_HOME/ | head
+          ls -la $ANDROID_HOME/build-tools/ | head
+          which aidl || ls $ANDROID_HOME/build-tools/*/aidl
 
       - name: Build with buildozer
         run: buildozer -v android debug
