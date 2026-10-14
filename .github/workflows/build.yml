@@ -31,39 +31,38 @@ jobs:
           pip install --upgrade pip
           pip install "buildozer==1.5.0" "cython==0.29.36" "setuptools<80"
 
-      - name: Prime buildozer Android SDK with licenses accepted
+      - name: Prime buildozer Android SDK from GitHub runner
         run: |
-          # Create buildozer's expected SDK directory
-          BK_SDK=$HOME/.buildozer/android/platform/android-sdk
-          mkdir -p $BK_SDK
-          
-          # Copy GitHub's pre-installed command-line tools and build-tools
-          cp -r $ANDROID_HOME/cmdline-tools $BK_SDK/ 2>/dev/null || true
-          cp -r $ANDROID_HOME/build-tools $BK_SDK/ 2>/dev/null || true
-          cp -r $ANDROID_HOME/platform-tools $BK_SDK/ 2>/dev/null || true
-          cp -r $ANDROID_HOME/platforms $BK_SDK/ 2>/dev/null || true
-          cp -r $ANDROID_HOME/licenses $BK_SDK/ 2>/dev/null || true
-          
-          # Ensure tools/bin/sdkmanager exists (buildozer 1.5.0 expects this path)
-          mkdir -p $BK_SDK/tools/bin
-          cp $BK_SDK/cmdline-tools/latest/bin/* $BK_SDK/tools/bin/ 2>/dev/null || true
-          
-          # Print what we have
-          echo "=== buildozer SDK contents ==="
-          ls -la $BK_SDK/
-          echo "=== build-tools versions ==="
-          ls -la $BK_SDK/build-tools/ || echo "no build-tools"
-          echo "=== aidl locations ==="
-          find $BK_SDK -name aidl -type f 2>/dev/null || echo "no aidl found"
-          echo "=== licenses ==="
-          ls -la $BK_SDK/licenses/ || echo "no licenses"
+          BK=$HOME/.buildozer/android/platform
+          mkdir -p $BK
+          # symlink the entire pre-installed SDK into buildozer's path
+          ln -sfn $ANDROID_HOME $BK/android-sdk
+          # symlink the NDK
+          ln -sfn $ANDROID_NDK_HOME $BK/android-ndk-r28c
+          # also symlink as the version buildozer expects
+          ln -sfn $ANDROID_NDK_HOME $BK/android-ndk
+          echo "=== SDK symlink ==="
+          ls -la $BK/
+          echo "=== check aidl via symlink ==="
+          find $BK/android-sdk -name aidl -type f 2>/dev/null | head -5
+          echo "=== check platform-tools via symlink ==="
+          ls $BK/android-sdk/platform-tools/ 2>/dev/null | head -3
+          echo "=== check licenses ==="
+          ls $BK/android-sdk/licenses/ 2>/dev/null
 
       - name: Build with buildozer
         run: buildozer -v android debug
+        env:
+          ANDROIDSDK: ${{ env.ANDROID_HOME }}
+          ANDROIDNDK: ${{ env.ANDROID_NDK_HOME }}
+          ANDROIDAPI: "33"
+          ANDROIDMINAPI: "24"
 
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: antiphish-apk
           path: bin/*.apk
+          if-no-files-found: warn
           retention-days: 30
