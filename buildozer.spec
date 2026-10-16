@@ -9,7 +9,7 @@ source.include_patterns = analyzer/*.py,static/*.png
 
 version = 0.1
 
-requirements = python3,charset-normalizer
+requirements = python3
 
 orientation = portrait
 fullscreen = 0
